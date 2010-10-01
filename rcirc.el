@@ -1031,8 +1031,7 @@ If ALL is non-nil, update prompts in all IRC buffers."
   "Return t if TARGET is a channel name."
   (and target
        (not (zerop (length target)))
-       (or (eq (aref target 0) ?#)
-           (eq (aref target 0) ?&))))
+       (or (member (aref target 0) '(?# ?& ?+ ?!)))))
 
 (defun rcirc-kill-buffer-hook ()
   "Part the channel when killing an rcirc buffer."
