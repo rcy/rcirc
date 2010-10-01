@@ -45,6 +45,7 @@
 
 (require 'ring)
 (require 'time-date)
+(require 'netrc)
 (eval-when-compile (require 'cl))
 
 (defgroup rcirc nil
@@ -192,43 +193,22 @@ the window."
   :type 'boolean
   :group 'rcirc)
 
-(defcustom rcirc-authinfo nil
-  "List of authentication passwords.
-Each element of the list is a list with a SERVER-REGEXP string
-and a method symbol followed by method specific arguments.
+(defcustom rcirc-authinfo-file (expand-file-name "~/.authinfo")
+  "Location of authentication passwords.
+This file is consulted for authentication to nick/channel
+servers.  It is formatted like a netrc file (see man ftp(1)),
+with two additional keywords:
 
-The valid METHOD symbols are `nickserv', `chanserv' and
-`bitlbee'.
-
-The ARGUMENTS for each METHOD symbol are:
-  `nickserv': NICK PASSWORD [NICKSERV-NICK]
-  `chanserv': NICK CHANNEL PASSWORD
-  `bitlbee': NICK PASSWORD
-
-Examples:
- ((\"freenode\" nickserv \"bob\" \"p455w0rd\")
-  (\"freenode\" chanserv \"bob\" \"#bobland\" \"passwd99\")
-  (\"bitlbee\" bitlbee \"robert\" \"sekrit\")
-  (\"dal.net\" nickserv \"bob\" \"sekrit\" \"NickServ@services.dal.net\"))"
-  :type '(alist :key-type (string :tag "Server")
-		:value-type (choice (list :tag "NickServ"
-					  (const nickserv)
-					  (string :tag "Nick")
-					  (string :tag "Password"))
-				    (list :tag "ChanServ"
-					  (const chanserv)
-					  (string :tag "Nick")
-					  (string :tag "Channel")
-					  (string :tag "Password"))
-				    (list :tag "BitlBee"
-					  (const bitlbee)
-					  (string :tag "Nick")
-					  (string :tag "Password"))))
+* The \"port\" keyword, if it exists, must be \"irc\".
+* The \"account\" keyword, if it exists, may be \"bitlbee\",
+  \"chanserv\", or the name of your nickserv.  If not present,
+  \"nickserv\" is used."
+  :type 'file
   :group 'rcirc)
 
 (defcustom rcirc-auto-authenticate-flag t
   "*Non-nil means automatically send authentication string to server.
-See also `rcirc-authinfo'."
+See also `rcirc-authinfo-file'."
   :type 'boolean
   :group 'rcirc)
 
@@ -2651,35 +2631,30 @@ keywords when no KEYWORD is given."
 
 (defun rcirc-authenticate ()
   "Send authentication to process associated with current buffer.
-Passwords are stored in `rcirc-authinfo' (which see)."
+Passwords are stored in `rcirc-authinfo-file'."
   (interactive)
   (with-rcirc-server-buffer
-    (dolist (i rcirc-authinfo)
+    (dolist (i (netrc-parse rcirc-authinfo-file))
       (let ((process (rcirc-buffer-process))
-	    (server (car i))
-	    (nick (caddr i))
-	    (method (cadr i))
-	    (args (cdddr i)))
-	(when (and (string-match server rcirc-server)
-		   (string-match nick rcirc-nick))
-	  (cond ((equal method 'nickserv)
-		 (rcirc-send-string
-		  process
-		  (concat "PRIVMSG " (or (cadr args) "nickserv")
-                          " :identify " (car args))))
-		((equal method 'chanserv)
-		 (rcirc-send-string
-		  process
-		  (concat
-		   "PRIVMSG chanserv :identify "
-		   (car args) " " (cadr args))))
-		((equal method 'bitlbee)
-		 (rcirc-send-string
-		  process
-		  (concat "PRIVMSG &bitlbee :identify " (car args))))
-		(t
-		 (message "No %S authentication method defined"
-			  method))))))))
+            (machine (netrc-get i "machine"))
+            (port (netrc-get i "port"))
+            (account (netrc-get i "account"))
+            (nick (netrc-get i "login"))
+            (password (netrc-get i "password")))
+        (when (and (or (not port) (equal port "irc"))
+                   (and machine (string-match machine rcirc-server))
+                   (or (not nick) (string-match nick rcirc-nick)))
+          (message "We have a match!")
+          (cond ((equal account "bitlbee")
+                 (rcirc-send-string
+                  process
+                  (concat "PRIVMSG &bitlbee :identify " password)))
+                (t
+                 (rcirc-send-string
+                  process
+                  (format "PRIVMSG %s :identify %s"
+                          (or account "nickserv")
+                          password)))))))))
 
 (defun rcirc-handler-INVITE (process sender args text)
   (rcirc-print process sender "INVITE" nil (mapconcat 'identity args " ") t))
