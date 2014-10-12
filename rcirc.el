@@ -322,6 +322,12 @@ and the cdr part is used for encoding."
   :type 'function
   :group 'rcirc)
 
+(defcustom rcirc-default-connect-function 'open-network-stream
+  "Function used to initiate a connection.
+It should take the same arguments as `open-network-stream' does."
+  :group 'rcirc
+  :type 'function)
+
 (defvar rcirc-nick nil)
 
 (defvar rcirc-prompt-start-marker nil)
@@ -429,6 +435,7 @@ If ARG is non-nil, instead prompt for connection parameters."
 			     rcirc-default-user-name))
 	      (full-name (or (plist-get (cdr c) :full-name)
 			     rcirc-default-full-name))
+              (connect-function (plist-get (cdr c) :connect-function))
 	      (channels (plist-get (cdr c) :channels))
               (password (plist-get (cdr c) :password)))
 	  (when server
@@ -439,7 +446,8 @@ If ARG is non-nil, instead prompt for connection parameters."
 	      (if (not connected)
 		  (condition-case e
 		      (rcirc-connect server port nick user-name
-				     full-name channels password)
+				     full-name channels password
+                                     connect-function)
 		    (quit (message "Quit connecting to %s" server)))
 		(with-current-buffer (process-buffer connected)
 		  (setq connected-servers
@@ -471,7 +479,8 @@ If ARG is non-nil, instead prompt for connection parameters."
 
 ;;;###autoload
 (defun rcirc-connect (server &optional port nick user-name
-                             full-name startup-channels password)
+                             full-name startup-channels password
+                             connect-function)
   (save-excursion
     (message "Connecting to %s..." server)
     (let* ((inhibit-eol-conversion)
@@ -483,8 +492,9 @@ If ARG is non-nil, instead prompt for connection parameters."
 	   (nick (or nick rcirc-default-nick))
 	   (user-name (or user-name rcirc-default-user-name))
 	   (full-name (or full-name rcirc-default-full-name))
+           (connect-function (or connect-function rcirc-default-connect-function))
 	   (startup-channels startup-channels)
-           (process (make-network-process :name server :host server :service port-number)))
+           (process (funcall connect-function server nil server port-number)))
       ;; set up process
       (set-process-coding-system process 'raw-text 'raw-text)
       (switch-to-buffer (rcirc-generate-new-buffer-name process nil))
@@ -698,7 +708,7 @@ Function is called with PROCESS, COMMAND, SENDER, ARGS and LINE.")
   "Send PROCESS a STRING plus a newline."
   (let ((string (concat (encode-coding-string string rcirc-encode-coding-system)
                         "\n")))
-    (unless (eq (process-status process) 'open)
+    (unless (member (process-status process) '(open run))
       (error "Network connection to %s is not open"
              (process-name process)))
     (rcirc-debug process string)
