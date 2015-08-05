@@ -437,12 +437,16 @@ Do not connect to a server if it is already connected.
 If ARG is non-nil, instead prompt for connection parameters."
   (interactive "P")
   (if arg
-      (let* ((server (completing-read "IRC Server: "
+      (let* ((network (completing-read "IRC Network: "
 				      rcirc-server-alist
 				      nil nil
 				      (caar rcirc-server-alist)
 				      'rcirc-server-name-history))
-	     (server-plist (cdr (assoc-string server rcirc-server-alist)))
+	     (server-plist (cdr (assoc-string network rcirc-server-alist)))
+	     (host (read-string "IRC Host: "
+				  (or (plist-get server-plist :host)
+				      network)
+				  'rirc-server-host-history))
 	     (port (read-string "IRC Port: "
 				(number-to-string
 				 (or (plist-get server-plist :port)
@@ -466,13 +470,14 @@ If ARG is non-nil, instead prompt for connection parameters."
 						" "))
 			"[, ]+" t))
              (encryption (rcirc-prompt-for-encryption server-plist)))
-	(rcirc-connect server port nick user-name
+	(rcirc-connect network host port nick user-name
 		       rcirc-default-full-name
 		       channels password encryption))
     ;; connect to servers in `rcirc-server-alist'
     (let (connected-servers)
       (dolist (c rcirc-server-alist)
-	(let ((server (car c))
+	(let ((network (car c))
+	      (host (or (plist-get (cdr c) :host) (car c)))
 	      (nick (or (plist-get (cdr c) :nick) rcirc-default-nick))
 	      (port (or (plist-get (cdr c) :port) rcirc-default-port))
 	      (user-name (or (plist-get (cdr c) :user-name)
@@ -483,22 +488,20 @@ If ARG is non-nil, instead prompt for connection parameters."
               (password (plist-get (cdr c) :password))
               (encryption (plist-get (cdr c) :encryption))
               contact)
-	  (when server
+	  (when network
 	    (let (connected)
 	      (dolist (p (rcirc-process-list))
-		(when (string= server (process-name p))
+		(when (string= network (process-name p))
 		  (setq connected p)))
 	      (if (not connected)
 		  (condition-case e
-		      (rcirc-connect server port nick user-name
+		      (rcirc-connect network host port nick user-name
 				     full-name channels password encryption)
-		    (quit (message "Quit connecting to %s" server)))
+		    (quit (message "Quit connecting to %s" network)))
+		;;; XXX: this needs to be fixed.
 		(with-current-buffer (process-buffer connected)
-                  (setq contact (process-contact
-                                 (get-buffer-process (current-buffer)) :host))
                   (setq connected-servers
-                        (cons (if (stringp contact) contact server)
-                              connected-servers))))))))
+                        (cons network connected-servers))))))))
       (when connected-servers
 	(message "Already connected to %s"
 		 (if (cdr connected-servers)
@@ -524,7 +527,7 @@ If ARG is non-nil, instead prompt for connection parameters."
 (defvar rcirc-process nil)
 
 ;;;###autoload
-(defun rcirc-connect (server &optional port nick user-name
+(defun rcirc-connect (network server &optional port nick user-name
                              full-name startup-channels password encryption)
   (save-excursion
     (message "Connecting to %s..." server)
@@ -539,7 +542,7 @@ If ARG is non-nil, instead prompt for connection parameters."
 	   (full-name (or full-name rcirc-default-full-name))
 	   (startup-channels startup-channels)
            (process (open-network-stream
-                     server nil server port-number
+                     network nil server port-number
                      :type (or encryption 'plain))))
       ;; set up process
       (set-process-coding-system process 'raw-text 'raw-text)
@@ -2009,7 +2012,7 @@ activity.  Only run if the buffer is not visible and
 		(t "[]")))
     (run-hooks 'rcirc-update-activity-string-hook)))
 
-(defun rcirc-activity-string (buffers)
+(defun rcirc-activity-string (buffers &optional ignore-faceless)
   (mapconcat (lambda (b)
 	       (let ((s (substring-no-properties (rcirc-short-buffer-name b))))
 		 (with-current-buffer b
