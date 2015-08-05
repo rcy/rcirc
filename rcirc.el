@@ -2012,7 +2012,7 @@ activity.  Only run if the buffer is not visible and
 		(t "[]")))
     (run-hooks 'rcirc-update-activity-string-hook)))
 
-(defun rcirc-activity-string (buffers &optional ignore-faceless)
+(defun rcirc-activity-string (buffers)
   (mapconcat (lambda (b)
 	       (let ((s (substring-no-properties (rcirc-short-buffer-name b))))
 		 (with-current-buffer b
