@@ -1547,10 +1547,11 @@ record activity."
 		    (propertize "\n" 'hard t))
 
  	    ;; squeeze spaces out of text before rcirc-text
-	    (fill-region fill-start
-			 (1- (or (next-single-property-change fill-start
-							      'rcirc-text)
-				 rcirc-prompt-end-marker)))
+	    (when rcirc-fill-flag
+	      (fill-region fill-start
+			   (1- (or (next-single-property-change fill-start
+								'rcirc-text)
+				   rcirc-prompt-end-marker))))
 
 	    ;; run markup functions
  	    (save-excursion
@@ -2562,9 +2563,13 @@ If ARG is given, opens the URL in a new browser window."
   (rcirc-check-auth-status process sender args text)
   (let ((target (car args))
         (message (cadr args)))
-    (if (string-match "^\C-a\\(.*\\)\C-a$" message)
-        (rcirc-handler-CTCP-response process target sender
-				     (match-string 1 message))
+    (cond
+     ((string-match "^\C-a\\(.*\\)\C-a$" message)
+      (rcirc-handler-CTCP-response process target sender
+				   (match-string 1 message)))
+     ((string-match "^KEEPALIVE [0-9.]+$" message)
+      (rcirc-handler-ctcp-KEEPALIVE process target sender message))
+     (t
       (rcirc-print process sender "NOTICE"
 		   (cond ((rcirc-channel-p target)
 			  target)
@@ -2575,7 +2580,7 @@ If ARG is given, opens the URL in a new browser window."
 			  (if (string= sender (rcirc-server-name process))
 			      nil	; server notice
 			    sender)))
-                 message t))))
+                 message t)))))
 
 (defun rcirc-check-auth-status (process sender args text)
   "Check if the user just authenticated.
@@ -2737,7 +2742,7 @@ the only argument."
   (let ((topic (cadr args)))
     (rcirc-print process sender "TOPIC" (car args) topic)
     (with-current-buffer (rcirc-get-buffer process (car args))
-      (setq rcirc-topic topic))))
+      (setq rcirc-topic (decode-coding-string topic rcirc-decode-coding-system)))))
 
 (defvar rcirc-nick-away-alist nil)
 (defun rcirc-handler-301 (process sender args text)
@@ -2773,7 +2778,7 @@ the only argument."
   (let ((buffer (or (rcirc-get-buffer process (cadr args))
 		    (rcirc-get-temp-buffer-create process (cadr args)))))
     (with-current-buffer buffer
-      (setq rcirc-topic (caddr args)))))
+      (setq rcirc-topic (decode-coding-string (caddr args)  rcirc-decode-coding-system)))))
 
 (defun rcirc-handler-333 (process sender args text)
   "333 says who set the topic and when.
@@ -2917,6 +2922,7 @@ Passwords are stored in `rcirc-authinfo' (which see)."
                              " :\C-aTIME " (current-time-string) "\C-a")))
 
 (defun rcirc-handler-CTCP-response (process target sender message)
+  (message message)
   (rcirc-print process sender "CTCP" nil message t))
 
 (defgroup rcirc-faces nil
